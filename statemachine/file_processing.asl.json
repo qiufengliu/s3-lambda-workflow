@@ -1,0 +1,47 @@
+{
+    "Comment": "A state machine that does mock stock trading.",
+    "StartAt": "FileProcessing",
+    "States": {
+      "FileProcessing": {
+        "Type": "Task",
+        "Resource": "${FileWorkerFunctionArn}",
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "States.TaskFailed"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 3,
+            "BackoffRate": 1
+          }
+        ],
+        "Next": "RecordJob"
+      },
+      "RecordJob": {
+        "Type": "Task",
+        "Resource": "${DDBPutItem}",
+        "Parameters": {
+            "TableName": "${DDBTable}",
+          "Item": {
+            "JobName": {
+              "S.$": "$$.Execution.Name"
+            },
+            "file_total_size": {
+              "S.$": "$.total_size"
+            }
+          }
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "States.TaskFailed"
+            ],
+            "IntervalSeconds": 20,
+            "MaxAttempts": 5,
+            "BackoffRate": 10
+          }
+        ],
+        "End": true
+      }
+    }
+  }

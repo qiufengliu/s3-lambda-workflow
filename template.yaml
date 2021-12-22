@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  s3-lambda-workflow
+
+  Sample SAM Template for s3-lambda-workflow
+
+Resources:
+  FileProcessingStateMachine:
+    Type: AWS::Serverless::StateMachine # More info about State Machine Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-statemachine.html
+    Properties:
+      DefinitionUri: statemachine/file_processing.asl.json
+      DefinitionSubstitutions:
+        FileCheckerFunctionArn: !GetAtt FileCheckerFunction.Arn
+        FileWorkerFunctionArn: !GetAtt FileWorkerFunction.Arn
+        DDBPutItem: !Sub arn:${AWS::Partition}:states:::dynamodb:putItem
+        DDBTable: !Ref JobTable
+      Policies: # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
+        - LambdaInvokePolicy:
+            FunctionName: !Ref FileCheckerFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref FileWorkerFunction
+        - DynamoDBWritePolicy:
+            TableName: !Ref JobTable
+
+  FileCheckerFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html
+    Properties:
+      CodeUri: functions/file_checker/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Policies:
+        - Statement:
+          - Sid: StartExecutePolicy
+            Effect: Allow
+            Action:
+            - states:StartExecution
+            Resource: '*'
+          - Sid: S3ReadPolicy
+            Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource: '*'
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: "File Processing State machine ARN"
+          STEP: 2
+
+  FileWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/file_worker/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Policies:
+        - Statement:
+          - Sid: S3ReadPolicy
+            Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource: '*'
+
+  JobTable:
+    Type: AWS::Serverless::SimpleTable # More info about SimpleTable Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-simpletable.html
+    Properties:
+      PrimaryKey:
+        Name: JobName
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+Outputs:
+  FileProcessingStateMachineArn:
+    Description: "File Processing State machine ARN"
+    Value: !Ref FileProcessingStateMachine
+  FileProcessingStateMachineRoleArn:
+    Description: "IAM Role created for File Processing State machine based on the specified SAM Policy Templates"
+    Value: !GetAtt FileProcessingStateMachineRole.Arn
